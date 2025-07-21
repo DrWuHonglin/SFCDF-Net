@@ -1,2 +1,2 @@
 # SFCDF-Net
-The code will be updated shortly.
+The code will be released shortly after the paper is accepted for publication.
