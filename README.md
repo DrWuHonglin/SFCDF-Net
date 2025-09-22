@@ -1,23 +1,23 @@
 # SFCDF-Net
-## MGFNet
-MGFNet: A Multiscale Gated Fusion Network For Multimodal Semantic Segmentation [[Paper](https://doi.org/10.1007/s00371-025-03912-x)]
+## SFCDF-Net
+SFCDF-Net: Enhancing Multi-modal Semantic Segmentation via Spatial-Frequency Collaborative Filtering
 
 <p align="center">
   <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/framework.png" width="900" height="450">
 </p>
 
-This repository contains the official implementation of MGFNet, a novel network for multimodal semantic segmentation.
+This repository contains the official implementation of SFCDF-Net, a novel network for multimodal semantic segmentation.
 
 - Achieves efficient and precise multimodal remote sensing semantic segmentation
-- MGFNet: A dual-stream multimodal semantic segmentation network with a multilevel fusion strategy.
-- Introduces the MGF module for extracting multiscale complementary features and adaptively weighting modalities.
-- CMI & CMME Modules: The CMI module enables rich cross-modal interactions and long-range dependency modeling, while the CMME module enhances multiscale feature integration for improved segmentation.
+- SFCDF-Net: A dual-stream multimodal semantic segmentation network with a multilevel fusion strategy.
+- A CCSI module is proposed to leverage selective interactions and attention-based enhancement for initial spatial refinement, effectively narrowing the modality gap and guiding subsequent frequency domain filtering.
+- We propose a DSF to dynamically filter and select informative frequency components in a data-driven manner, enabling effective cross-modal frequency domain interaction and noise suppression
   
 ## Results
 
-1. MGFNet achieves competitive results on the following datasets:
-- Vaihingen[[Vaihingen](https://pan.baidu.com/s/12OXC1D0-pnjEToQzr1Wb8g?pwd=ZHLI)]: 84.18% mIoU
-- Potsdam  [[Potsdam](https://pan.baidu.com/s/12OXC1D0-pnjEToQzr1Wb8g?pwd=ZHLI)]: 85.87% mIoU
+1. SFCDF-Net achieves competitive results on the following datasets:
+- Vaihingen: 83.94% mIoU
+- Potsdam: 86.02% mIoU
 2. We provide visualizations of our results on the Vaihingen and Potsdam datasets:
 <p align="center">
   <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/invaihingen.png" width="800" height="450">
@@ -25,8 +25,6 @@ This repository contains the official implementation of MGFNet, a novel network 
 <p align="center">
   <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/inposdam.png" width="800" height="450">
 </p>
-Qualitative performance comparisons on the Vaihingen and Potsdam test set. (a) RGB images, (b) DSM, (c) Ground truth, (d) ABCNet, (e) TransUNet, (f) UNetFormer, (g)
-MAResU-Net, (h) CMTFNet, (i) vFuseNet, (j) SA-GATE, (k) ESANet, (l) CMGFNet, (m) CMFNet, (n) SGFNet, (o) AsymFormer, and (p) proposed MGFNet. The red boxes are added to all subfigures to highlight the differences.
 
 ## Installation
 1. Requirements
