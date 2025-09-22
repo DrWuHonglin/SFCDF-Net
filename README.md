@@ -1,6 +1,5 @@
 # SFCDF-Net
-## SFCDF-Net
-SFCDF-Net: Enhancing Multi-modal Semantic Segmentation via Spatial-Frequency Collaborative Filtering
+## SFCDF-Net: Enhancing Multi-modal Semantic Segmentation via Spatial-Frequency Collaborative Filtering
 
 <p align="center">
   <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/framework.png" width="900" height="450">
@@ -11,7 +10,7 @@ This repository contains the official implementation of SFCDF-Net, a novel netwo
 - Achieves efficient and precise multimodal remote sensing semantic segmentation
 - SFCDF-Net: A dual-stream multimodal semantic segmentation network with a multilevel fusion strategy.
 - A CCSI module is proposed to leverage selective interactions and attention-based enhancement for initial spatial refinement, effectively narrowing the modality gap and guiding subsequent frequency domain filtering.
-- We propose a DSF to dynamically filter and select informative frequency components in a data-driven manner, enabling effective cross-modal frequency domain interaction and noise suppression
+- We propose a DSF to dynamically filter and select informative frequency components in a data-driven manner, enabling effective cross-modal frequency domain interaction and noise suppression
   
 ## Results
 
