@@ -3,7 +3,7 @@
 MGFNet: A Multiscale Gated Fusion Network For Multimodal Semantic Segmentation [[Paper](https://doi.org/10.1007/s00371-025-03912-x)]
 
 <p align="center">
-  <img src="https://github.com/DrWuHonglin/MGFNet/blob/main/images/framework.png" width="900" height="450">
+  <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/framework.png" width="900" height="450">
 </p>
 
 This repository contains the official implementation of MGFNet, a novel network for multimodal semantic segmentation.
@@ -20,10 +20,10 @@ This repository contains the official implementation of MGFNet, a novel network 
 - Potsdam  [[Potsdam](https://pan.baidu.com/s/12OXC1D0-pnjEToQzr1Wb8g?pwd=ZHLI)]: 85.87% mIoU
 2. We provide visualizations of our results on the Vaihingen and Potsdam datasets:
 <p align="center">
-  <img src="https://github.com/DrWuHonglin/MGFNet/blob/main/images/vaihingen.png" width="800" height="450">
+  <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/invaihingen.png" width="800" height="450">
 </p>
 <p align="center">
-  <img src="https://github.com/DrWuHonglin/MGFNet/blob/main/images/potsdam.png" width="800" height="450">
+  <img src="https://github.com/DrWuHonglin/SFCDF-Net/blob/main/images/inposdam.png" width="800" height="450">
 </p>
 Qualitative performance comparisons on the Vaihingen and Potsdam test set. (a) RGB images, (b) DSM, (c) Ground truth, (d) ABCNet, (e) TransUNet, (f) UNetFormer, (g)
 MAResU-Net, (h) CMTFNet, (i) vFuseNet, (j) SA-GATE, (k) ESANet, (l) CMGFNet, (m) CMFNet, (n) SGFNet, (o) AsymFormer, and (p) proposed MGFNet. The red boxes are added to all subfigures to highlight the differences.
@@ -41,7 +41,7 @@ MAResU-Net, (h) CMTFNet, (i) vFuseNet, (j) SA-GATE, (k) ESANet, (l) CMGFNet, (m)
 - ipython==8.12.3
 
 ## Demo
-To quickly test the MGFNet with randomly generated tensors, you can run the demo.py file. This allows you to verify the model functionality without requiring a dataset.
+To quickly test the SFCDF-Net with randomly generated tensors, you can run the demo.py file. This allows you to verify the model functionality without requiring a dataset.
 1. Ensure that the required dependencies are installed:
 ```
 pip install -r requirements.txt
