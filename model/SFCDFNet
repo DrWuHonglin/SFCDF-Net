@@ -1,0 +1,338 @@
+import copy
+import time
+
+import torch.nn as nn
+import torch
+from torchvision import models
+import torch.nn.functional as F
+
+ALL_S = True
+ALL_CHA = True
+ALL_SPA = True
+ALL_F = True
+ALL_S2F = True
+
+
+
+def ResNet50():  # resnet50 = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+    resnet50 = models.resnet50(pretrained=True)
+    return resnet50
+
+
+class StdConv2d(nn.Conv2d):
+    def forward(self, x):
+        w = self.weight
+        v, m = torch.var_mean(w, dim=[1, 2, 3], keepdim=True, unbiased=False)
+        w = (w - m) / torch.sqrt(v + 1e-5)
+        return F.conv2d(x, w, self.bias, self.stride, self.padding,
+                        self.dilation, self.groups)
+
+
+def conv3x3(cin, cout, stride=1, groups=1, bias=False):
+    return StdConv2d(cin, cout, kernel_size=3, stride=stride,
+                     padding=1, bias=bias, groups=groups)
+
+
+def conv1x1(cin, cout, stride=1, bias=False):
+    return StdConv2d(cin, cout, kernel_size=1, stride=stride,
+                     padding=0, bias=bias)
+
+
+class Conv2dReLU(nn.Sequential):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            kernel_size,
+            padding=0,
+            stride=1,
+            use_batchnorm=True,
+    ):
+        conv = nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=not (use_batchnorm),
+        )
+        relu = nn.ReLU(inplace=True)
+        bn = nn.BatchNorm2d(out_channels)
+        super(Conv2dReLU, self).__init__(conv, bn, relu)
+
+
+class CCSI(nn.Module):
+    def __init__(self, channel, reduction=16, cha=ALL_CHA, spa=ALL_SPA):
+        super(CCSI, self).__init__()
+        self.cha = cha
+        self.spa = spa
+
+        # 通道
+        self.fc_x = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+        self.fc_y = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+        if spa:
+            # 空间
+            self.spatial_attx = nn.Sequential(
+                nn.Conv2d(channel, 1, 1),
+                nn.Sigmoid()
+            )
+            self.spatial_atty = nn.Sequential(
+                nn.Conv2d(channel, 1, 1),
+                nn.Sigmoid()
+            )
+
+    def forward(self, x, y):
+        b, c, H, W = x.size()  # 输入尺寸
+        # 获取通道描述符
+        weighting_x = F.adaptive_avg_pool2d(x, 1).view(b, c)
+        weighting_y = F.adaptive_avg_pool2d(y, 1).view(b, c)
+        # 计算注意力权重
+        weighting_x = self.fc_x(weighting_x).view(b, c, 1, 1)
+        weighting_y = self.fc_y(weighting_y).view(b, c, 1, 1)
+
+        # 压缩
+        w_x = weighting_x * x
+        w_y = weighting_y * y
+        if self.spa:
+            if self.cha:
+                # 交换加强
+                w_x = w_x + x * self.spatial_attx(x + w_y)
+                w_y = w_y + y * self.spatial_atty(y + w_x)
+                return w_x + w_y
+            else:
+                w_x = x * self.spatial_attx(x + w_y)
+                w_y = y * self.spatial_atty(y + w_x)
+                return w_x + w_y
+        else:
+            if self.cha:
+                return w_x + w_y
+            else:
+                return x + y
+
+
+class DSF(nn.Module):
+    def __init__(self, channel, s2f=ALL_S2F):
+        super(DSF, self).__init__()
+        self.s2f = s2f
+        if s2f:
+            self.fftconv = nn.Sequential(
+                conv1x1(channel * 3, channel // 2, stride=1, bias=True),
+                nn.BatchNorm2d(channel // 2),
+                nn.GELU(),
+                conv1x1(channel // 2, channel * 2, stride=1, bias=True),
+                nn.Sigmoid()
+            )
+        else:
+            self.fftconv = nn.Sequential(
+                conv1x1(channel * 2, channel // 2, stride=1, bias=True),
+                nn.BatchNorm2d(channel // 2),
+                nn.GELU(),
+                conv1x1(channel // 2, channel * 2, stride=1, bias=True),
+                nn.Sigmoid()
+            )
+
+    def forward(self, x, y, f):
+        b, c, H, W = x.size()  # 输入尺寸
+        # 频域变化
+        x_freq = torch.fft.rfft2(x, norm="backward")
+        y_freq = torch.fft.rfft2(y, norm="backward")  # B,C,H,W//2 +1
+        f_freq = torch.fft.rfft2(f, norm="backward")  # B,C,H,W//2 +1
+
+        # 陷波器 基于幅度 思路是该模态大部分都认为该频率强那么保留
+        if self.s2f:
+            maskx, masky = torch.chunk(self.fftconv(torch.abs(torch.cat([x_freq, y_freq, f_freq], dim=1))), 2, dim=1)
+        else:
+            maskx, masky = torch.chunk(self.fftconv(torch.abs(torch.cat([x_freq, y_freq], dim=1))), 2, dim=1)
+        f = torch.fft.irfft2(x_freq * maskx, s=(H, W), norm='backward') + torch.fft.irfft2(y_freq * masky, s=(H, W),
+                                                                                           norm='backward')
+        return f
+
+
+class FUS(nn.Module):
+    def __init__(self, channel, size=32, if_res=True,
+                 reduction=16, activation=nn.ReLU(inplace=True), S=ALL_S, F=ALL_F):
+        super(FUS, self).__init__()
+        self.s = S
+        self.f = F
+        if S:
+            self.ccsi = CCSI(channel, reduction)
+        if F:
+            self.dsf = DSF(channel)
+
+    def forward(self, x, y):
+        if self.s:
+            f_spa = self.ccsi(x, y)
+        else:
+            f_spa = x + y
+        if self.f:
+            f_fus = self.dsf(x, y, f_spa)
+            return f_spa, f_fus
+        else:
+            return f_spa, f_spa
+
+
+class DecoderBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, skip_channels=0, use_batchnorm=True, ):
+        super().__init__()
+        self.conv1 = Conv2dReLU(in_channels + skip_channels, out_channels, kernel_size=3, padding=1,
+                                use_batchnorm=use_batchnorm, )
+        self.conv2 = Conv2dReLU(out_channels, out_channels, kernel_size=3, padding=1, use_batchnorm=use_batchnorm, )
+        self.up = nn.UpsamplingBilinear2d(scale_factor=2)
+
+    def forward(self, x, skip=None):
+        x = self.up(x)
+        if skip is not None:
+            x = torch.cat([x, skip], dim=1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
+
+
+class DecoderCup(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv_more = Conv2dReLU(1024, 512, kernel_size=3, padding=1, use_batchnorm=True)
+
+        in_channels = [512, 256, 128, 64]
+        out_channels = [256, 128, 64, 16]
+        skip_channels = [512, 256, 64, 0]
+        blocks = [
+            DecoderBlock(in_ch, out_ch, sk_ch) for in_ch, out_ch, sk_ch in zip(in_channels, out_channels, skip_channels)
+        ]
+
+        self.blocks = nn.ModuleList(blocks)
+
+    def forward(self, x, features=None):
+        x = self.conv_more(x)
+        for i, decoder_block in enumerate(self.blocks):
+            if features is not None:
+                skip = features[i] if (i < 3) else None
+            else:
+                skip = None
+            x = decoder_block(x, skip=skip)
+        return x
+
+
+class SegmentationHead(nn.Sequential):
+
+    def __init__(self, in_channels, out_channels, kernel_size=3, upsampling=1):
+        conv2d = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=kernel_size // 2)
+        upsampling = nn.UpsamplingBilinear2d(scale_factor=upsampling) if upsampling > 1 else nn.Identity()
+        super().__init__(conv2d, upsampling)
+
+
+class SFCDFNet(nn.Module):
+    def __init__(self, num_class=6):
+        super(SFCDFNet, self).__init__()
+        resnet50 = ResNet50()
+        self.dsm_conv0 = nn.Conv2d(1, 3, kernel_size=1)
+        self.rgb_conv1 = resnet50.conv1
+        self.dsm_conv1 = copy.deepcopy(resnet50.conv1)
+
+        self.rgb_bn1 = resnet50.bn1
+        self.dsm_bn1 = copy.deepcopy(resnet50.bn1)
+
+        self.relu = resnet50.relu
+        self.maxpool = resnet50.maxpool
+
+        self.rgb_layer1 = resnet50.layer1
+        self.dsm_layer1 = copy.deepcopy(resnet50.layer1)
+
+        self.rgb_layer2 = resnet50.layer2
+        self.dsm_layer2 = copy.deepcopy(resnet50.layer2)
+
+        self.rgb_layer3 = resnet50.layer3
+        self.dsm_layer3 = copy.deepcopy(resnet50.layer3)
+
+        # 融合模块
+        self.fus_layer0 = FUS(64, 128)  # -----------
+        self.fus_layer1 = FUS(256, 64)
+        self.fus_layer2 = FUS(512, 32)
+        self.fus_layer3 = FUS(1024, 16)
+
+        # 解码器
+        self.decoderCup = DecoderCup()
+        self.segmentationHead = SegmentationHead(16, num_class)  # 分割头
+        # CMTFNet
+        # self.decoderCup = CustomDecoder(num_classes=num_class)
+
+    def forward(self, input_rgb, input_dsm):
+        features = []
+        input_dsm = self.dsm_conv0(input_dsm)  # dsm通道变3
+
+        input_rgb0 = self.relu(self.rgb_bn1(self.rgb_conv1(input_rgb)))
+        input_dsm0 = self.relu(self.dsm_bn1(self.dsm_conv1(input_dsm)))
+        fusion0, re0 = self.fus_layer0(input_rgb0, input_dsm0)
+        features.append(re0)
+
+        input_rgb = self.maxpool(fusion0)
+        input_dsm = self.maxpool(input_dsm0)
+
+        input_rgb1 = self.rgb_layer1(input_rgb)
+        input_dsm1 = self.dsm_layer1(input_dsm)
+        fusion1, re1 = self.fus_layer1(input_rgb1, input_dsm1)
+        features.append(re1)
+
+        input_rgb2 = self.rgb_layer2(fusion1)
+        input_dsm2 = self.dsm_layer2(input_dsm1)
+        fusion2, re2 = self.fus_layer2(input_rgb2, input_dsm2)
+        features.append(re2)
+
+        input_rgb3 = self.rgb_layer3(fusion2)
+        input_dsm3 = self.dsm_layer3(input_dsm2)
+        _, fusion3 = self.fus_layer3(input_rgb3, input_dsm3)
+
+        x = self.decoderCup(fusion3, features[::-1])
+        logits = self.segmentationHead(x)
+        # logits = self.decoderCup(*features, res4=fusion3, h=256, w=256)
+
+        return logits
+
+
+if __name__ == "__main__":
+    from thop import profile, clever_format
+
+    x = torch.randn(1, 3, 256, 256)
+    y = torch.randn(1, 1, 256, 256)
+    net = SFCDFNet()
+
+    flops, params = profile(net, inputs=(x, y))
+    macs, params = clever_format([flops, params], "%.3f")
+    print("FLOPs:", macs)
+    print("params:", params)
+
+    # 释放模型占用的显存
+    del net
+    torch.cuda.empty_cache()
+    # 重新实例化模型用于测试 FPS
+    net = SFCDFNet().cuda()
+    x = x.cuda()
+    y = y.cuda()
+    net.eval()
+    # 计算 FPS
+    with torch.no_grad():
+        # GPU 预热
+        for _ in range(100):
+            _ = net(x, y)
+
+        # 正式计时
+        ep = 100
+        torch.cuda.synchronize()
+        start = time.time()
+        for _ in range(ep):  # 测试 ep 次前向
+            _ = net(x, y)
+        torch.cuda.synchronize()
+        end = time.time()
+
+    fps = ep / (end - start)
+    print("FPS:", fps)
